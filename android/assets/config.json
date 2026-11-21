@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "name": "Welcome home",
+  "theme": "cinematic",
+  "rotation_seconds": 300,
+  "dream_seconds": 20,
+  "favorites": [
+    {"label": "YouTube", "package": "com.google.android.youtube.tv"},
+    {"label": "Netflix", "package": "com.netflix.ninja"},
+    {"label": "Prime Video", "package": "com.amazon.amazonvideo.livingroom"},
+    {"label": "Apple TV", "package": "com.apple.atve.androidtv.appletv"}
+  ],
+  "photos": []
+}

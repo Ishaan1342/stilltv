@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "match": {"manufacturer": "Example", "model": "Synthetic TV"},
+  "disable": [
+    {"package": "com.vendor.recommendations", "reason": "Synthetic example only: reviewed recommendation package with no TV role."}
+  ]
+}

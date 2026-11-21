@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "match": {"manufacturer": "Sony", "sdk": 31},
+  "disable": [],
+  "notes": "Conservative starting profile. No Sony package is presumed safe to disable. Inspect the exact model and review each candidate. Preserve TVX, input services, setup, updates, remote, casting and existing launchers."
+}
