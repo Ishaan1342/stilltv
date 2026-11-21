@@ -13,6 +13,12 @@ export ANDROID_HOME=/path/to/android-sdk
 python tools/build_android.py
 ```
 
+On a clean Linux x86-64 build host, `python tools/setup_android.py --sdk /path/to/sdk` can bootstrap
+the official command tools and specified packages. It verifies a pinned SHA-256 before extraction.
+Review the Android SDK terms and pass `--accept-licenses` explicitly when appropriate. CI uses this
+path instead of assuming its runner image contains an SDK manager. An ARM64 host still needs native
+aapt2/zipalign overrides below, because Google's Linux native build binaries are x86-64.
+
 The script compiles resources with aapt2, compiles Java against the Android API and SDK lambda stubs,
 uses d8 for DEX, zipaligns, signs with a per-host local development key, then runs apksigner verification.
 It does not install anything on a TV. APK output is `build/android/stilltv.apk` with a printed SHA-256.
