@@ -24,7 +24,7 @@ from .launcher import activate, configure, install, restore_home
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="stilltv",
-        description="Offline TV home + inspect/plan/apply/restore. Device required for TV operations.",
+        description="Set up an Android TV home screen, prepare photos, and manage saved changes.",
     )
     parser.add_argument("--device", help="Exact authorized ADB device serial or host:port")
     parser.add_argument(
@@ -47,13 +47,17 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--width", type=int, default=3840)
     p.add_argument("--height", type=int, default=2160)
+    p.add_argument(
+        "--layout",
+        choices=["contain", "fill"],
+        default="contain",
+        help="Keep the whole photo (contain), or crop landscapes to fill the screen (fill)",
+    )
     p = commands.add_parser(
         "install", help="Install a locally built APK; do not change Home or interrupt playback"
     )
     p.add_argument("--apk", type=Path, required=True)
-    p = commands.add_parser(
-        "configure", help="Stage assets and atomically commit launcher configuration"
-    )
+    p = commands.add_parser("configure", help="Upload photos and save the home-screen config")
     p.add_argument("--config", type=Path, required=True)
     p.add_argument("--photos", type=Path)
     p = commands.add_parser(
@@ -75,7 +79,7 @@ def main(argv=None) -> int:
         if args.command == "photos":
             from .photos import prepare
 
-            result = prepare(args.source, args.out, args.width, args.height)
+            result = prepare(args.source, args.out, args.width, args.height, args.layout)
         else:
             if not args.device:
                 parser.error("--device is required for TV operations")
@@ -100,7 +104,9 @@ def main(argv=None) -> int:
             elif args.command == "install":
                 result = install(adb, args.apk)
             elif args.command == "configure":
-                result = configure(adb, json.loads(args.config.read_text()), args.photos)
+                result = configure(
+                    adb, json.loads(args.config.read_text()), args.photos, args.state_dir
+                )
             elif args.command == "activate":
                 result = activate(adb, args.state_dir or state_root(), args.pause_projectivy)
             elif args.command == "restore-home":

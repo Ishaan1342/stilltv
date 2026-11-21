@@ -11,6 +11,7 @@ sdkmanager 'platforms;android-34' 'build-tools;34.0.0'
 export JAVA_HOME=/path/to/jdk-17
 export ANDROID_HOME=/path/to/android-sdk
 python tools/build_android.py
+python tools/test_android_logic.py
 ```
 
 On a clean Linux x86-64 build host, `python tools/setup_android.py --sdk /path/to/sdk` can bootstrap
@@ -22,6 +23,8 @@ aapt2/zipalign overrides below, because Google's Linux native build binaries are
 The script compiles resources with aapt2, compiles Java against the Android API and SDK lambda stubs,
 uses d8 for DEX, zipaligns, signs with a per-host local development key, then runs apksigner verification.
 It does not install anything on a TV. APK output is `build/android/stilltv.apk` with a printed SHA-256.
+Compilation uses a fresh temporary directory on each build, so deleted classes don't linger in the APK.
+The host-JDK checks cover photo decode sizing; they don't run Android or test the TV's memory behavior.
 
 The SDK build-tools binaries for Linux are x86-64. On ARM64 Linux, install native `aapt` (which includes
 `aapt2`) and `zipalign` from your OS distribution and use an ARM64 JDK. Pass their paths explicitly:

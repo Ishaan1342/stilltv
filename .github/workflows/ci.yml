@@ -43,6 +43,7 @@ jobs:
           java-version: '17'
       - name: Install specified SDK tools
         run: python3 tools/setup_android.py --sdk "$ANDROID_HOME" --accept-licenses
+      - run: python3 tools/test_android_logic.py
       - run: python3 tools/build_android.py
       - name: Verify launcher permission boundary
         run: |

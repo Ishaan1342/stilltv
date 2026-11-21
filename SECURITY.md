@@ -1,9 +1,8 @@
-# Security reporting
+# Reporting a security issue
 
-Do not file public issues containing private device data, credentials or exploitable details.
-Use GitHub's **Report a vulnerability** privately if enabled. If it is unavailable, first open a
-metadata-only issue asking for a private channel; do not include the vulnerability itself.
+Use GitHub's **Report a vulnerability** option if it's available. Otherwise, open an issue asking
+for a private contact, without describing the vulnerability or including device data.
 
-This is an early MVP, not a security audit or a promise to protect a device from a malicious ADB host.
-An authorized ADB host already has extensive device control. Protect the host and close debugging
-after setup. See [the operational security notes](docs/security.md).
+StillTV is early software. Its checks help prevent accidental changes; they don't protect a TV
+from someone who already controls an authorized ADB computer. Keep that computer secure and
+[turn debugging off after setup](docs/security.md).

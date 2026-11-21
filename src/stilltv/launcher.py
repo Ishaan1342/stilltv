@@ -17,10 +17,13 @@ from .core import (
     device_lock,
     inventory,
     private_path,
+    state_root,
 )
 
 
 def validate_config(config: dict) -> None:
+    if not isinstance(config, dict):
+        raise Refused("Launcher configuration must be a JSON object.")
     if config.get("schema") != 1 or config.get("theme", "cinematic") not in {
         "cinematic",
         "quiet",
@@ -62,9 +65,20 @@ def validate_config(config: dict) -> None:
             raise Refused("Caption too long.")
 
 
-def configure(adb: Adb, config: dict, photo_dir: Path | None = None) -> dict:
+def configure(
+    adb: Adb, config: dict, photo_dir: Path | None = None, root: Path | None = None
+) -> dict:
     validate_config(config)
     inv = inventory(adb)
+    root = private_path(root) if root is not None else state_root()
+    with device_lock(root, inv["device_id"]):
+        current = inventory(adb)
+        if current["device_id"] != inv["device_id"]:
+            raise Refused("Device changed while acquiring its lock.")
+        return _configure(adb, config, photo_dir, current)
+
+
+def _configure(adb: Adb, config: dict, photo_dir: Path | None, inv: dict) -> dict:
     if APP not in inv["packages"]:
         raise Refused("Install StillTV before configuring it.")
     blobs = []
@@ -77,22 +91,40 @@ def configure(adb: Adb, config: dict, photo_dir: Path | None = None) -> dict:
                 raise Refused("A generated photo is missing, oversized or a symlink.")
             blobs.append((photo[key], path))
     # Validate all local inputs before writing any bytes. Active config is committed atomically last.
+    upload = uuid.uuid4().hex
     for name, path in dict(blobs).items():
+        data = path.read_bytes()
         adb.shell(
             "content",
             "write",
             "--uri",
-            f"content://{AUTHORITY}/photo/{name}",
-            data=path.read_bytes(),
+            f"content://{AUTHORITY}/photo/{upload}/{name}",
+            data=data,
         )
+        output = adb.shell(
+            "content",
+            "call",
+            "--uri",
+            f"content://{AUTHORITY}",
+            "--method",
+            "commit-photo",
+            "--arg",
+            f"{upload}:{name}:{hashlib.sha256(data).hexdigest()}",
+        )
+        if "result=ok" not in output:
+            raise Refused(
+                "Photo upload was rejected. The previous photos and config are unchanged."
+            )
     adb.shell(
         "content",
         "write",
         "--uri",
-        f"content://{AUTHORITY}/pending",
+        f"content://{AUTHORITY}/pending/{upload}",
         data=json.dumps(config).encode(),
     )
-    output = adb.shell("content", "call", "--uri", f"content://{AUTHORITY}", "--method", "commit")
+    output = adb.shell(
+        "content", "call", "--uri", f"content://{AUTHORITY}", "--method", "commit", "--arg", upload
+    )
     if "result=ok" not in output:
         raise Refused("Configuration commit was rejected. The previous config remains active.")
     return {
@@ -123,7 +155,10 @@ def activate(adb: Adb, root: Path, pause_projectivy: bool = False) -> dict:
     root = private_path(root)
     inv = inventory(adb)
     with device_lock(root, inv["device_id"]):
-        return _activate(adb, root, pause_projectivy, inv)
+        current = inventory(adb)
+        if current["device_id"] != inv["device_id"]:
+            raise Refused("Device changed while acquiring its lock.")
+        return _activate(adb, root, pause_projectivy, current)
 
 
 def _activate(adb: Adb, root: Path, pause_projectivy: bool, inv: dict) -> dict:
@@ -134,7 +169,11 @@ def _activate(adb: Adb, root: Path, pause_projectivy: bool, inv: dict) -> dict:
             "status": "already_home",
             "note": "Verify the physical remote; a saved Home preference is not proof.",
         }
-    if not re.fullmatch(r"[\w.]+/[\w.$]+", inv["home"]) or "setup" in inv["home"].lower():
+    if (
+        not re.fullmatch(r"[\w.]+/[\w.$]+", inv["home"])
+        or inv["home"].startswith("android/")
+        or re.search(r"setup|resolver|chooser", inv["home"], re.IGNORECASE)
+    ):
         raise Refused(
             "Current Home is a chooser/setup screen; finish TV setup and pick a stable Home first."
         )
@@ -155,7 +194,7 @@ def _activate(adb: Adb, root: Path, pause_projectivy: bool, inv: dict) -> dict:
         before["removed_services"] = [component]
     atomic_json(path, before)
     try:
-        if pause_projectivy:
+        if before["removed_services"]:
             component = "com.spocky.projengmenu/com.spocky.projengmenu.services.ProjectivyAccessibilityService"
             remaining = [
                 x for x in before["accessibility"].split(":") if x not in {"", "null", component}
@@ -197,13 +236,20 @@ def restore_home(adb: Adb, path: Path) -> dict:
     path = private_path(path)
     inv = inventory(adb)
     with device_lock(path.parents[1], inv["device_id"]):
-        return _restore_home(adb, path, inv)
+        current = inventory(adb)
+        if current["device_id"] != inv["device_id"]:
+            raise Refused("Device changed while acquiring its lock.")
+        return _restore_home(adb, path, current)
 
 
 def _restore_home(adb: Adb, path: Path, inv: dict) -> dict:
     before = json.loads(path.read_text())
     if inv["device_id"] != before.get("device_id"):
         raise Refused("Home journal belongs to another device.")
+    if before.get("schema") != 1 or before.get("status") not in {"pending", "active", "restored"}:
+        raise Refused("Invalid Home journal version or status.")
+    if before["status"] == "restored":
+        return {"status": "already_restored", "home": before["home"]}
     if not re.fullmatch(r"[\w.]+/[\w.$]+", before.get("home", "")):
         raise Refused("Invalid original Home component.")
     if inv["home"] != before["home"] and not inv["home"].startswith(APP + "/"):
@@ -225,8 +271,11 @@ def _restore_home(adb: Adb, path: Path, inv: dict) -> dict:
         if service not in services:
             services.append(service)
     if before.get("removed_services"):
+        enabled = adb.shell("settings", "get", "secure", "accessibility_enabled")
         adb.shell("settings", "put", "secure", "enabled_accessibility_services", ":".join(services))
-        adb.shell("settings", "put", "secure", "accessibility_enabled", "1")
+        # Don't enable globally disabled services, or turn off a newer screen reader.
+        if before.get("accessibility_enabled") == "1" and enabled != "1":
+            adb.shell("settings", "put", "secure", "accessibility_enabled", "1")
     before["status"] = "restored"
     atomic_json(path, before)
     return {"status": "restored", "home": before["home"]}

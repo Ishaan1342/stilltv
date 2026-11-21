@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stilltv"
 version = "0.1.0"
-description = "An offline TV home, with device-bound plans and recoverable Android TV customization."
+description = "A local-photo home screen and setup tool for Android TV."
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "Ishaan1342"}]

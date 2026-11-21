@@ -1,8 +1,4 @@
-"""Offline photo framing: keep the entire photo away from text and zoom cutoffs.
-
-No face-recognition claim: the foreground is contained, never face-cropped. No EXIF, GPS,
-original filename or photo bytes are uploaded. Pillow is an optional dependency.
-"""
+"""Prepare local photos for the TV, without changing the originals or keeping EXIF."""
 
 from __future__ import annotations
 
@@ -12,11 +8,15 @@ from pathlib import Path
 from .core import Refused, atomic_json, private_path
 
 
-def prepare(source: Path, output: Path, width: int = 3840, height: int = 2160) -> dict:
+def prepare(
+    source: Path, output: Path, width: int = 3840, height: int = 2160, layout: str = "contain"
+) -> dict:
     try:
         from PIL import Image, ImageFilter, ImageOps, ImageStat
     except ImportError as error:
         raise Refused('Install the optional photo tools: pip install "stilltv[photos]"') from error
+    if layout not in {"contain", "fill"}:
+        raise Refused("Choose contain for whole photos or fill for full-screen landscapes.")
     if (
         width < 640
         or height < 360
@@ -47,22 +47,24 @@ def prepare(source: Path, output: Path, width: int = 3840, height: int = 2160) -
     for file in files:
         with Image.open(file) as opened:
             image = ImageOps.exif_transpose(opened).convert("RGB")
-        # Always contain the whole foreground. The blurred background may be cropped.
         backdrop = ImageOps.fit(image, (width, height), method=Image.Resampling.LANCZOS)
-        backdrop = backdrop.filter(ImageFilter.GaussianBlur(radius=max(8, width // 80)))
+        if layout == "contain":
+            backdrop = backdrop.filter(ImageFilter.GaussianBlur(radius=max(8, width // 80)))
         key = hashlib.sha256(
-            image.tobytes() + str(image.size).encode() + f"{width}x{height}:v1".encode()
+            image.tobytes() + str(image.size).encode() + f"{width}x{height}:{layout}:v2".encode()
         ).hexdigest()
         names = {}
         for mode, sx, sy, cy in [("home", 0.76, 0.54, 0.49), ("dream", 0.76, 0.76, 0.50)]:
             frame = backdrop.copy()
-            foreground = ImageOps.contain(
-                image, (int(width * sx), int(height * sy)), method=Image.Resampling.LANCZOS
-            )
-            frame.paste(
-                foreground,
-                ((width - foreground.width) // 2, int(height * cy - foreground.height / 2)),
-            )
+            if layout == "contain":
+                # The complete foreground stays clear of the clock and app shortcuts.
+                foreground = ImageOps.contain(
+                    image, (int(width * sx), int(height * sy)), method=Image.Resampling.LANCZOS
+                )
+                frame.paste(
+                    foreground,
+                    ((width - foreground.width) // 2, int(height * cy - foreground.height / 2)),
+                )
             name = f"{mode}-{key}.jpg"
             frame.save(output / name, "JPEG", quality=92, optimize=True, exif=b"")
             names[mode] = name
@@ -79,7 +81,7 @@ def prepare(source: Path, output: Path, width: int = 3840, height: int = 2160) -
         "schema": 1,
         "frame": [width, height],
         "photos": result,
-        "method": "contain-full-foreground-v1",
+        "method": "fill-landscape-v2" if layout == "fill" else "contain-full-foreground-v2",
     }
     atomic_json(output / "photos.json", manifest)
     return manifest

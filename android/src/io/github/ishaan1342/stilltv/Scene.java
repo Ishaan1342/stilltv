@@ -21,22 +21,36 @@ final class Scene {
     String next(Config config, boolean dream) {
         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         List<JSONObject> photos = config.photos(hour >= 21 || hour < 7);
-        if (photos.isEmpty()) return "A little more space to unwind.";
+        if (photos.isEmpty()) return "";
         JSONObject photo = photos.get(index++ % photos.size());
         File file = new File(new File(context.getFilesDir(), "photos"), photo.optString(dream ? "dream" : "file"));
         int request = ++generation;
-        decode.execute(() -> {
+        // Wait for layout: a newly created ImageView still reports a zero size.
+        image.post(() -> {
+            if (closed || request != generation) return;
+            int surface = Math.max(image.getWidth(), image.getHeight());
+            if (surface == 0) {
+                android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+                surface = Math.max(metrics.widthPixels, metrics.heightPixels);
+            }
+            final int target = Math.min(3840, Math.max(surface, 960));
+            decode.execute(() -> {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true; BitmapFactory.decodeFile(file.getPath(), options);
-            int target = Math.min(1920, Math.max(image.getWidth(), image.getHeight()));
-            target = Math.max(target, 960);
-            options.inSampleSize = 1;
-            while (Math.max(options.outWidth, options.outHeight) / (options.inSampleSize * 2) >= target) options.inSampleSize *= 2;
-            options.inJustDecodeBounds = false; options.inPreferredConfig = Bitmap.Config.RGB_565;
-            Bitmap bitmap = BitmapFactory.decodeFile(file.getPath(), options);
+            if (options.outWidth <= 0 || options.outHeight <= 0) return;
+            long budget = Math.min(32L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 4);
+            options.inSampleSize = PhotoSizing.sample(options.outWidth, options.outHeight, target, budget);
+            options.inJustDecodeBounds = false; options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap decoded = null;
+            while (decoded == null && options.inSampleSize <= Math.max(options.outWidth, options.outHeight)) {
+                try { decoded = BitmapFactory.decodeFile(file.getPath(), options); break; }
+                catch (OutOfMemoryError memory) { options.inSampleSize *= 2; }
+            }
+            final Bitmap bitmap = decoded;
             main.post(() -> {
                 if (!closed && request == generation && bitmap != null) image.setImageBitmap(bitmap);
                 else if (bitmap != null) bitmap.recycle();
+            });
             });
         });
         return photo.optString("caption", "");

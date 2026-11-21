@@ -1,71 +1,87 @@
-# Architecture and recovery contract
+# How it works
+
+The Android app is native Java, targeting API 26 and later. It has no third-party runtime libraries
+or requested permissions. The Python tool uses the standard library, with Pillow as an optional
+photo-processing dependency. Neither needs an AI service at runtime.
+
+## Configuration and photos
 
 ```
-Local photos → local contain/EXIF-strip → private JPEGs
-Private config → staged provider writes → validated atomic config commit
-                       ↓
-             Native offline Home + PhotoDream
-
-ADB inspect → manufacturer profile → hardware/snapshot-bound plan
-                                         ↓ exact SHA approval
-                               write-ahead journal → apply → verify
-                                         ↓ failure
-                              compensate owned package changes
+Original photos → local framing and metadata removal → prepared JPEGs
+Config + JPEGs → ADB upload → validation → replace active config
+                                      ↓
+                           Home screen and screensaver
 ```
 
-## Boundaries
+The app stores config and photos in its private storage. Its content provider requires
+`WRITE_SECURE_SETTINGS`, so ordinary apps can't configure it. The provider checks that permission
+explicitly for `call()` as well as file access. Paths, image sizes and config fields are validated.
+Android backup is disabled.
 
-The Android app is native Java, API 26+, no third-party runtime libraries and no requested permissions.
-The Python core uses only the standard library. Pillow is an optional, local-only photo-processing
-dependency. No AI model, API key, cloud photo store or unattended agent is required at runtime.
+Photos go into a separate upload directory first. Each file is checked against its SHA-256 before
+publication; an existing photo is never overwritten. The provider checks every referenced file,
+then uses `AtomicFile` to replace the active config and reads it back before reporting success.
+Reads share the write lock and use `AtomicFile` recovery after an interrupted write.
+Reopen Home to load the new one. Keep your original config and prepared photos if you want to
+restore an older setup; the provider doesn't keep a version history.
 
-`Adb` uses an explicit serial and shell-quoted remote arguments. It has bounded command timeouts and
-does not retry refusals. Identity uses a SHA-256 of manufacturer + hardware serial (not IP alone).
-This pseudonymous hash is still private device metadata. It is not a cryptographic authentication
-mechanism; the ADB authorization is the trust boundary.
+Interrupted uploads can leave unused files behind. There isn't an automatic cleanup or free-space
+preflight yet.
 
-Plans include schema, identity, state digest, transitions, reasons and their complete SHA-256. The
-digest is a review/change-control mechanism, not a signature or authorization service. Runtime policy
-is rechecked even when someone recomputes the plan hash. A plan is never transferable between TVs.
+Photo decoding follows the actual Android surface, up to 4K. Each bitmap is limited to 32 MiB or
+a quarter of the app's heap, whichever is smaller. A smaller decode is attempted if memory runs out.
+A TV with a small app heap or a 1080p UI surface will use a lower-resolution decode.
 
-## Mutation and replay
+## Package changes
 
-1. Capture inventory; revalidate identity, policy, state and exact approval.
-2. Acquire one filesystem lock per device. Package changes and Home handover share that lock.
-3. Write a journal and private settings backup before package mutation.
-4. Persist a `pending` entry **before** each `pm disable-user`.
-5. Verify the actual package state; mark `applied`.
-6. On a caught failure/interrupt, compensate in reverse order and verify state.
+```
+Inspect TV → review profile → save plan → approve exact hash
+                                             ↓
+                               journal → change → check
+                                             ↓ failure
+                                 undo recorded changes
+```
 
-A pending step can have succeeded remotely before its acknowledgement was lost. Recovery inspects it
-instead of assuming it failed. A previously disabled package never becomes this tool's rollback target.
-Repeated apply after a successful journal is a no-op only if its recorded states still hold. A stale
-or interrupted journal requires explicit recovery and a fresh plan, not silent re-execution.
+ADB commands use an explicit device serial, quoted shell arguments and bounded timeouts. StillTV
+doesn't retry a refusal. A hash of the manufacturer and hardware serial identifies the TV, rather
+than its IP address. That hash is still private metadata, not a way to authenticate the device;
+ADB authorization handles access.
 
-Recovery is **not transaction isolation from other ADB clients**. TV power loss, disconnection or another
-actor's changes can defeat compensation. Re-enabling a package disabled by our recorded transition
-cannot distinguish a subsequent independent decision to keep that same package disabled; review the
-journal if other tools have changed the TV. Filesystem locks coordinate StillTV on one host only.
+A plan records the device, a snapshot of its state, package changes, reasons and a SHA-256 hash.
+The hash catches changes to a reviewed plan; it isn't a signature. The tool checks its package
+policy again at apply time, even if someone has recomputed the hash.
 
-Home handover journals the old component, pauses only an explicitly selected Projectivy override,
-sets the new preference, injects one Home event and checks the resumed activity. Failure restores the
-old preference. Restoration merges back only the service it paused, preserving newer screen readers
-and other accessibility choices. It refuses to overwrite an unrelated newer Home choice.
+Before applying, the tool rechecks the device and snapshot, acquires a per-device filesystem lock,
+and saves a journal and settings backup. Each step is marked pending **before** the ADB command.
+Afterwards, the tool reads back the package state. If a command fails or is interrupted, it tries
+to undo the recorded changes in reverse order.
 
-## Android configuration
+A command can succeed even if its acknowledgement gets lost. Recovery checks pending steps too.
+Packages already disabled before the plan aren't recovery targets. Applying the same successful
+plan again is a no-op only while the recorded result still holds. Every new plan gets a unique ID,
+so it can be applied after an earlier plan was restored. An interrupted journal needs explicit recovery
+and a new plan. Recovery attempts continue if a journal write or another package's restore fails;
+the tool reports any remaining changes or unsaved recovery state.
 
-The exported content provider is protected by `WRITE_SECURE_SETTINGS`. `call()` also enforces that
-permission explicitly, because framework read/write enforcement does not consistently cover calls.
-Normal installed apps cannot configure the launcher. Path names are tightly validated, no arbitrary
-filesystem paths are accepted, and Android backup is disabled.
+## Changing Home
 
-Photos are staged first. `config.pending` is validated (schema, labels, bounded intervals, path-safe
-names, image dimensions and asset presence). `AtomicFile` commits it last. Failure leaves the active
-config unchanged. Reopening Home reloads the config. This is atomic configuration publication, not
-a versioned configuration rollback service. Save your source config/photos to reapply an older look.
+Home handover shares the package-operation lock. It saves the old Home component, optionally pauses
+only Projectivy's Home override, changes the preference, sends one Home event and checks the resumed
+activity. On failure it tries to restore the old preference.
 
-## Scaling model
+Restoration adds back only the accessibility service it paused, preserving newer accessibility
+choices. It refuses to replace a different Home app chosen since the handover. A completed restore
+is a no-op if replayed, so an old journal can't undo a later Home or accessibility choice.
+It doesn't disable the stock launcher.
 
-Reusable profiles + generated per-TV plans + isolated per-device journals. This scales the **procedure**,
-not unattended fleet administration. We do not scan networks or fan out writes. New OEM support needs
-real hardware validation. There is no central controller, managed-device policy server or remote cloud.
+## Where recovery stops
+
+These are compensating changes, not an atomic Android transaction. Power loss, disconnection or
+another ADB client can leave work for you to recover manually. The lock only coordinates StillTV
+processes on the same computer, and a stale lock isn't removed automatically.
+
+If another tool later disables the same package for its own reason, StillTV can't tell that apart
+from its own recorded change. Read the journal before restoring in that situation.
+
+Profiles can be shared; plans and journals belong to one TV. There's no network scanning, cloud
+controller or unattended rollout. Supporting another TV still means testing on that hardware.

@@ -1,34 +1,49 @@
-# Verification record
+# What has been tested
 
-## Local development checks, 21 November 2026
+Last checked: 21 November 2026.
 
-- Python 3.13 / ARM64 Linux: **42 unit and failure-injection tests passed**.
-- Ruff import/static checks and formatting: passed.
-- Android platform 34 + build-tools 34.0.0, ARM64 Temurin JDK 17 with native Debian aapt2/zipalign:
-  native Java compilation, DEX generation, resource packaging and APK signature verification passed.
-- First signed development APK: **25,242 bytes**. Size is not a speed/efficiency benchmark; future
-  revisions may differ. Contains no bundled personal photos or third-party runtime libraries.
-- Source distribution and wheel build: passed; the sdist includes Android source, build tools and docs.
-- Installed-wheel smoke in a fresh virtual environment outside the checkout: passed.
-- Read-only inventory and zero-change planning on the Sony development TV: passed; HDMI/CEC identifies
-  PlayStation 5 on port 4. No launcher activation or package cleanup is implied by that read-only check.
-- Independent CI results are attached to each exact commit in [GitHub Actions](https://github.com/Ishaan1342/stilltv/actions/workflows/ci.yml).
+## Local checks
 
-## Hardware status
+- 61 Python tests pass on Python 3.13 / ARM64 Linux. These include wrong-device and stale-plan
+  refusal, interrupted uploads, lost acknowledgements, disk-full rollback and repeated Home recovery.
+- Ruff lint and formatting pass.
+- The Android APK builds and its signature verifies using platform/build-tools 34, JDK 17 and
+  native ARM64 aapt2/zipalign. It requests no Android permissions.
+- Host-JDK checks cover photo decode sizing, including 4K and smaller memory budgets.
+- A rebuild with invalid stale class, DEX and generated-source files in the output directory passes
+  without including those files.
+- Source and wheel builds pass. The Java checks are included in the source archive. The wheel's CLI
+  also passes a smoke check in a fresh environment outside the checkout.
+- Read-only inventory and a zero-change package plan have worked on the development Sony TV.
+  That does not test the launcher, HDMI switching or Home replacement.
 
-The initial development TV is a Sony BRAVIA KD-65X85J on Android 12 / API 31. Its existing setup has
-provided useful HDMI/setup failure evidence. **That is not yet a StillTV launcher validation.**
+GitHub checks are recorded against each commit in
+[Actions](https://github.com/Ishaan1342/stilltv/actions/workflows/ci.yml). A local pass isn't a CI result.
 
-Until a deliberate StillTV test is completed, do not mark any device as fully supported. Required:
+## Source review
 
-- Open StillTV without replacing Home; verify native rendering and D-pad focus.
-- Open a streaming app, return with the actual remote, and verify favorites/library behavior.
-- Discover inputs and display the actual HDMI source; a recorded CEC name is not picture verification.
-- Test the screensaver with several local frames, exit it with the remote, and check idle behavior.
-- Activate Home only at an agreed moment, check the physical Home/Input buttons, and exercise recovery.
-- Restart deliberately and verify Home, HDMI and the remote again.
-- Disable debugging and verify network-debug ports closed only when recovery checks are done.
+GPT-6 Astra at high reasoning reviewed the source, tests, build scripts, CI, profiles and docs.
+This was the available Astra model, not Astra 6.2. No unresolved release-blocking findings remained
+at the end of that source review.
 
-Fake-TV tests are transaction tests, **not an emulator or a real TV**. GitHub Android builds are compile/
-packaging checks, not instrumented UI tests. No cross-device performance, memory or boot-time benchmark
-has been run. We do not publish private screenshots, device addresses or settings backups as evidence.
+The review led to fixes for interrupted photo uploads, config-file recovery, journal-write failures,
+replayed Home journals, oversized bitmap allocations and stale compiler output. Regression checks
+cover the Python recovery paths and Java decode sizing. The provider's Android behavior still needs
+runtime testing; neither a source review nor these tests substitutes for it.
+
+## Still needs a TV test
+
+The development TV is a Sony BRAVIA KD-65X85J on Android 12 / API 31. StillTV has not been installed
+or activated on it yet. No device is marked fully supported.
+
+- Open the app and check layout, photo rotation and D-pad focus.
+- Launch apps and return using the physical remote.
+- Switch HDMI inputs and confirm the actual picture.
+- Start the screensaver, let it rotate, and exit using the remote.
+- Check Home replacement and recovery, then repeat after a restart.
+- Verify the provider's permissions and recovery from interrupted uploads/config writes on Android.
+- Check memory use with 4K photos on the TV's actual UI surface.
+- Turn debugging off after setup and recovery checks are complete.
+
+There are no Android instrumentation or emulator tests yet, and no cross-device speed, memory or
+boot-time benchmark. Private device records, photos and settings backups are not published.

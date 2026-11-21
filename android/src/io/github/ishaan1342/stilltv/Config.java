@@ -1,6 +1,7 @@
 package io.github.ishaan1342.stilltv;
 
 import android.content.Context;
+import android.util.AtomicFile;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
@@ -53,9 +54,9 @@ final class Config {
             return out.toByteArray();
         }
     }
-    static Config load(Context context) {
+    static synchronized Config load(Context context) {
         File file = new File(context.getFilesDir(), "config.json");
-        try { return parse(read(new FileInputStream(file), 262144)); }
+        try { return parse(read(new AtomicFile(file).openRead(), 262144)); }
         catch (Exception ignored) {
             try { return parse(read(context.getAssets().open("config.json"), 262144)); }
             catch (Exception error) { throw new IllegalStateException("Invalid bundled config", error); }

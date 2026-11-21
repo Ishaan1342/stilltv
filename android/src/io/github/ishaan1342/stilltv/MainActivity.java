@@ -115,8 +115,8 @@ public final class MainActivity extends Activity {
     private void toast(String message) { Toast.makeText(this,message,Toast.LENGTH_LONG).show(); }
     private void launch(String pkg) {
         Intent intent = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
-        if (intent == null) { toast("This TV app is not available."); return; }
-        try { startActivity(intent); } catch (Exception e) { toast("The TV refused to open this app."); }
+        if (intent == null) { toast("This app isn't installed."); return; }
+        try { startActivity(intent); } catch (Exception e) { toast("Couldn't open this app."); }
     }
     private void library() {
         PackageManager pm = getPackageManager();
@@ -126,7 +126,7 @@ public final class MainActivity extends Activity {
         for (ResolveInfo app : apps) if (!app.activityInfo.packageName.equals(getPackageName()) && !packages.contains(app.activityInfo.packageName)) {
             labels.add(app.loadLabel(pm).toString()); packages.add(app.activityInfo.packageName);
         }
-        new AlertDialog.Builder(this).setTitle("Your apps").setItems(labels.toArray(new String[0]),(d,n) -> launch(packages.get(n))).setNegativeButton("Close",null).show();
+        new AlertDialog.Builder(this).setTitle("Apps").setItems(labels.toArray(new String[0]),(d,n) -> launch(packages.get(n))).setNegativeButton("Close",null).show();
     }
     private void inputs() {
         TvInputManager manager = (TvInputManager)getSystemService(TV_INPUT_SERVICE);
@@ -139,7 +139,7 @@ public final class MainActivity extends Activity {
             labels.add(label + (state == TvInputManager.INPUT_STATE_CONNECTED ? " · connected" : state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY ? " · standby" : " · no signal"));
             sources.add(input);
         }
-        if (sources.isEmpty()) { toast("No HDMI inputs are exposed. Use your TV remote’s Input button."); return; }
+        if (sources.isEmpty()) { toast("Use your remote’s Input button to switch sources."); return; }
         new AlertDialog.Builder(this).setTitle("HDMI inputs").setItems(labels.toArray(new String[0]),(d,n) -> openInput(sources.get(n))).setNegativeButton("Close",null).show();
     }
     private void openInput(TvInputInfo source) {
@@ -147,7 +147,7 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(source.getId()));
         if (android.os.Build.MANUFACTURER.equalsIgnoreCase("Sony")) intent.setPackage("com.sony.dtv.tvx");
         try { startActivity(intent); }
-        catch (Exception error) { toast("The TV refused this input. Complete TV setup or use the remote’s Input button."); }
+        catch (Exception error) { toast("Couldn’t switch inputs. Try the remote’s Input button, and check whether TV setup is finished."); }
     }
     @Override public void onBackPressed() { /* Home is the root; never exit to a blank screen. */ }
 }

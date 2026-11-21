@@ -1,21 +1,25 @@
-# Operational security and teardown
+# Debugging access and private files
 
-- Keep photos, settings backups, journals, screenshots, authorizations and signing keys out of Git.
-  Settings backups can contain private account/network information. The CLI refuses private output
-  inside any Git checkout. Do not bypass that by copying its output into a commit.
-- Do not expose ADB to the internet. A host authorized by ADB can do much more than this CLI permits.
-  This tool's policy is an accidental-change guard, not a sandbox around a malicious host.
-- After launcher, HDMI, remote and rollback checks are complete, use the TV's Developer options to turn
-  off **USB debugging**, **Network/ADB debugging** and **Wireless debugging**, where present; revoke
-  debugging authorizations. Restart the TV and confirm normal operation.
-- From the same LAN, verify TCP port 5555 refuses connection. A timeout is **unverified**, not evidence
-  of a closed port. Wireless-debugging TLS ports are separate and can change after a restart; check the
-  actual port shown in Developer options too. Merely running `adb disconnect` does not close TV access.
-- Do not turn access off while an install or recovery remains unverified. Re-enabling it later needs
-  the remote and a fresh on-screen authorization.
+Keep photos, settings backups, journals, screenshots, signing keys and ADB authorizations out of Git.
+Backups can include account and network settings. The CLI refuses private output inside Git checkouts,
+but it can't stop you copying those files into one later.
 
-StillTV itself has no Internet permission, analytics SDK, local HTTP server or network listener. It
-does not imply that the rest of Android, the manufacturer's services or streaming apps are offline.
-There is no automatic firmware update removal, root, factory menu, DNS rewrite or universal debloat list.
+Don't expose ADB to the internet. An authorized ADB computer has much more access than StillTV uses.
+The CLI's checks aren't a sandbox for that computer.
 
-No paid service, account or subscription is required by StillTV. Streaming subscriptions are independent.
+## After setup
+
+Finish checking Home, HDMI, the remote and recovery before closing the debugging connection.
+Then, in the TV's Developer options:
+
+1. Turn off USB debugging, network/ADB debugging and wireless debugging, where available.
+2. Revoke debugging authorizations.
+3. Restart the TV and check normal operation.
+4. From the same LAN, check that port 5555 refuses connections. A timeout alone doesn't prove it's
+   closed. If wireless debugging showed a separate TLS port, check that too; it may change on restart.
+
+`adb disconnect` only disconnects your client. It doesn't turn off debugging on the TV.
+You'll need the remote and a new on-screen authorization if you enable it again.
+
+StillTV has no Internet permission or network listener. That says nothing about Android, the TV
+manufacturer's services or your streaming apps, which can still connect as usual.

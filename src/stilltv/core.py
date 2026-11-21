@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -144,7 +145,7 @@ def inventory(adb: Adb) -> dict[str, Any]:
         x in tv_features for x in ["android.software.leanback", "android.hardware.type.television"]
     ):
         raise Refused("This device does not advertise Android TV features.")
-    home = adb.shell(
+    home_lines = adb.shell(
         "cmd",
         "package",
         "resolve-activity",
@@ -153,7 +154,10 @@ def inventory(adb: Adb) -> dict[str, Any]:
         "android.intent.action.MAIN",
         "-c",
         "android.intent.category.HOME",
-    ).splitlines()[-1]
+    ).splitlines()
+    if not home_lines:
+        raise Refused("Could not resolve the current Home app; nothing changed.")
+    home = home_lines[-1]
     services = adb.shell("settings", "get", "secure", "enabled_accessibility_services")
     result = {
         "schema": 1,
@@ -222,6 +226,7 @@ def plan(inv: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
             )
     body = {
         "schema": 1,
+        "plan_id": uuid.uuid4().hex,
         "device_id": inv["device_id"],
         "snapshot": inv["snapshot"],
         "model": inv["model"],
@@ -272,21 +277,38 @@ def is_disabled(adb: Adb, package: str) -> bool:
 
 
 def recover(adb: Adb, journal: dict[str, Any], path: Path) -> dict[str, Any]:
+    failures = []
     for step in reversed(journal["steps"]):
         if step["status"] == "restored":
             continue
         pkg = step["package"]
         # A write-ahead step can have succeeded even if ADB never returned an acknowledgement.
-        if is_disabled(adb, pkg):
-            adb.shell("pm", "enable", "--user", "0", pkg)
+        try:
             if is_disabled(adb, pkg):
-                raise Refused(
-                    "Rollback verification failed. Keep this journal and debugging available."
-                )
-        step["status"] = "restored"
+                adb.shell("pm", "enable", "--user", "0", pkg)
+                if is_disabled(adb, pkg):
+                    raise Refused("Rollback verification failed.")
+            step["status"] = "restored"
+        except Exception as error:
+            # One unavailable package must not prevent attempts to restore the others.
+            failures.append(error)
+        try:
+            atomic_json(path, journal)
+        except OSError:
+            # The pending write is already recorded. A full disk must not prevent compensation.
+            pass
+    journal["status"] = "recovery_required" if failures else "rolled_back"
+    try:
         atomic_json(path, journal)
-    journal["status"] = "rolled_back"
-    atomic_json(path, journal)
+    except OSError as error:
+        state = "Recovery incomplete" if failures else "Changes restored, but journal save failed"
+        raise Refused(
+            f"{state}. Keep this journal and debugging available. Journal: {path}"
+        ) from error
+    if failures:
+        raise Refused(
+            f"Recovery incomplete. Keep debugging available. Journal: {path}"
+        ) from failures[0]
     return journal
 
 
@@ -296,6 +318,11 @@ def apply(adb: Adb, value: dict[str, Any], approval: str, root: Path) -> dict[st
     validate_plan(value, inv, approval)
     path = root / value["device_id"] / value["approval"] / "journal.json"
     with device_lock(root, inv["device_id"]):
+        current = inventory(adb)
+        if current["device_id"] != inv["device_id"]:
+            raise Refused("Device changed while acquiring its lock.")
+        inv = current
+        validate_plan(value, inv, approval)
         if path.exists():
             old = json.loads(path.read_text())
             if old["status"] == "applied" and all(
@@ -332,9 +359,14 @@ def apply(adb: Adb, value: dict[str, Any], approval: str, root: Path) -> dict[st
                     raise Refused("Package change was not verified.")
                 step["status"] = "applied"
                 atomic_json(path, journal)
+            journal["status"] = "applied"
+            atomic_json(path, journal)
         except (Exception, KeyboardInterrupt) as exc:
             journal["status"] = "recovery_required"
-            atomic_json(path, journal)
+            try:
+                atomic_json(path, journal)
+            except OSError:
+                pass  # Still try to restore the device when journal storage is unavailable.
             try:
                 recover(adb, journal, path)
             except (Exception, KeyboardInterrupt) as rollback_error:
@@ -342,15 +374,21 @@ def apply(adb: Adb, value: dict[str, Any], approval: str, root: Path) -> dict[st
                     f"Change failed and recovery is incomplete. Journal: {path}"
                 ) from rollback_error
             raise Refused(f"Change failed; recorded changes rolled back. Journal: {path}") from exc
-        journal["status"] = "applied"
-        atomic_json(path, journal)
     return {"status": "applied", "journal": str(path), "changes": len(value["changes"])}
 
 
 def restore(adb: Adb, path: Path) -> dict[str, Any]:
     path = private_path(path)
-    journal = json.loads(path.read_text())
     inv = inventory(adb)
+    with device_lock(path.parents[2], inv["device_id"]):
+        current = inventory(adb)
+        if current["device_id"] != inv["device_id"]:
+            raise Refused("Device changed while acquiring its lock.")
+        return _restore(adb, path, current)
+
+
+def _restore(adb: Adb, path: Path, inv: dict[str, Any]) -> dict[str, Any]:
+    journal = json.loads(path.read_text())
     value = journal.get("plan", {})
     validate_plan(value, inv, value.get("approval", ""))
     if journal.get("device_id") != inv["device_id"]:
@@ -361,6 +399,5 @@ def restore(adb: Adb, path: Path) -> dict[str, Any]:
     for pkg in allowed:
         if pkg not in inv["packages"]:
             raise Refused("A recorded package is missing; manual recovery is required.")
-    with device_lock(path.parents[2], inv["device_id"]):
-        recover(adb, journal, path)
+    recover(adb, journal, path)
     return {"status": "rolled_back", "journal": str(path)}

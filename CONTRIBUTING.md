@@ -1,18 +1,21 @@
 # Contributing
 
-Prefer a small reproducible case and one change per PR. Do not attach your TV inventory, ADB keys,
-logs, personal photo library or account screenshots. Use synthetic fixtures like the test suite.
+Small PRs are easier to review. Describe the problem, how to reproduce it and what you changed.
+Run the checks in the README before opening a PR.
 
-Run the README checks. Changes to Android source need a clean APK build and a clearly identified
-hardware test (model, API level, actions checked; no serial/IP/account). Don't call an emulator or a
-fake ADB test a hardware check. Changes to Home/HDMI behavior need physical remote observations.
+Please use made-up device data in tests and issues. Don't upload inventories, ADB keys, settings
+backups, personal photos or account screenshots.
 
-Device profiles must identify manufacturer/model, provide a specific review reason per candidate,
-and default conservatively. No wildcard disabling. No force bypass for protected components.
-New profiles are **unverified** until their documented hardware check is complete.
+For Android changes, build the APK. If you've tested on a TV, include the model, Android version
+and what you tried, without serial numbers or network addresses. Say plainly when something is
+only covered by a fake-ADB test or a build check. Home and HDMI changes need real remote testing.
 
-Keep runtime dependencies small and optional. No network permission, telemetry, root, factory/service
-menus, app uninstallation or automated firmware changes in the launcher/workflow.
+Profiles should name the manufacturer/model and give a reason for each candidate package.
+No wildcards or bypasses for protected components. A new profile stays unverified until someone
+has tested it on the relevant hardware.
 
-See `docs/architecture.md` before changing recovery. Test refusals and lost acknowledgements, not only
-happy paths. MIT license applies to contributions. Be respectful; credit upstream work accurately.
+Keep dependencies small. The launcher should stay offline, without telemetry, root or firmware
+changes. For changes to recovery, read [the architecture notes](docs/architecture.md) and add tests
+for failure cases, especially commands that succeed before their acknowledgement is lost.
+
+Contributions use the MIT license. Credit other projects where they're used.

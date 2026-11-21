@@ -14,11 +14,18 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
 
 def build(sdk: Path, jdk: Path, out: Path) -> Path:
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".compile-", dir=out) as work:
+        return _build(sdk, jdk, out, Path(work))
+
+
+def _build(sdk: Path, jdk: Path, out: Path, work: Path) -> Path:
     root = Path(__file__).resolve().parents[1]
     tools, jar = sdk / "build-tools/34.0.0", sdk / "platforms/android-34/android.jar"
     if not jar.is_file() or not (jdk / "bin/javac").is_file():
@@ -32,7 +39,7 @@ def build(sdk: Path, jdk: Path, out: Path) -> Path:
         PATH=str(jdk / "bin") + os.pathsep + os.environ.get("PATH", ""),
     )
     run = lambda *args: subprocess.run([str(x) for x in args], check=True, env=env)
-    generated, classes, dex = out / "generated", out / "classes", out / "dex"
+    generated, classes, dex = work / "generated", work / "classes", work / "dex"
     for directory in [generated, classes, dex]:
         directory.mkdir(exist_ok=True)
     aapt2 = Path(os.environ.get("STILLTV_AAPT2", tools / "aapt2"))

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import tempfile
@@ -9,6 +10,7 @@ from stilltv.core import (
     Adb,
     Refused,
     apply,
+    atomic_json,
     digest,
     input_summary,
     inventory,
@@ -200,6 +202,29 @@ class Transactions(unittest.TestCase):
         self.assertEqual(b["status"], "already_applied")
         self.assertEqual(len(self.tv.writes), 1)
 
+    def test_fresh_plan_after_restore_has_its_own_journal(self):
+        first = self.planned("com.vendor.recommendations")
+        result = apply(self.tv, first, first["approval"], self.root)
+        restore(self.tv, Path(result["journal"]))
+        fresh = self.planned("com.vendor.recommendations")
+        self.assertNotEqual(first["approval"], fresh["approval"])
+        again = apply(self.tv, fresh, fresh["approval"], self.root)
+        self.assertNotEqual(result["journal"], again["journal"])
+        self.assertEqual(self.tv.disabled, {"com.vendor.recommendations"})
+
+    def test_state_is_reread_after_lock_acquisition(self):
+        value = self.planned("com.vendor.recommendations")
+
+        @contextlib.contextmanager
+        def changed_while_waiting(*args):
+            self.tv.pkgs.add("com.example.newapp")
+            yield
+
+        with patch("stilltv.core.device_lock", changed_while_waiting):
+            with self.assertRaisesRegex(Refused, "state changed"):
+                apply(self.tv, value, value["approval"], self.root)
+        self.assertEqual(self.tv.writes, [])
+
     def test_restore_preserves_preexisting_disabled(self):
         self.tv.disabled.add("com.vendor.promotions")
         p = self.planned("com.vendor.recommendations")
@@ -223,6 +248,55 @@ class Transactions(unittest.TestCase):
         with self.assertRaisesRegex(Refused, "rolled back"):
             apply(self.tv, p, p["approval"], self.root)
         self.assertEqual(self.tv.disabled, set())
+
+    def test_journal_disk_failure_does_not_prevent_compensation(self):
+        value = self.planned("com.vendor.recommendations")
+
+        def disk_full_after_device_write(path, data):
+            if self.tv.writes:
+                raise OSError("Synthetic disk full")
+            atomic_json(path, data)
+
+        with patch("stilltv.core.atomic_json", disk_full_after_device_write):
+            with self.assertRaisesRegex(Refused, "Journal:"):
+                apply(self.tv, value, value["approval"], self.root)
+        self.assertEqual(self.tv.disabled, set())
+        path = next(self.root.rglob("journal.json"))
+        # The durable pending record is still sufficient for another recovery attempt.
+        self.assertEqual(restore(self.tv, path)["status"], "rolled_back")
+
+    def test_recovery_attempts_other_packages_after_one_failure(self):
+        value = self.planned("com.vendor.recommendations", "com.vendor.promotions")
+        result = apply(self.tv, value, value["approval"], self.root)
+        original = self.tv.shell
+
+        def fail_one_restore(*args, **kwargs):
+            if args[:2] == ("pm", "enable") and args[-1] == "com.vendor.promotions":
+                raise Refused("Synthetic package restore refusal")
+            return original(*args, **kwargs)
+
+        self.tv.shell = fail_one_restore
+        with self.assertRaisesRegex(Refused, "Recovery incomplete"):
+            restore(self.tv, Path(result["journal"]))
+        self.assertEqual(self.tv.disabled, {"com.vendor.promotions"})
+        self.tv.shell = original
+        restore(self.tv, Path(result["journal"]))
+        self.assertEqual(self.tv.disabled, set())
+
+    def test_final_journal_save_failure_compensates(self):
+        value = self.planned("com.vendor.recommendations")
+
+        def fail_final_status(path, data):
+            if data.get("status") == "applied":
+                raise OSError("Synthetic final journal failure")
+            atomic_json(path, data)
+
+        with patch("stilltv.core.atomic_json", fail_final_status):
+            with self.assertRaisesRegex(Refused, "recorded changes rolled back.*Journal:"):
+                apply(self.tv, value, value["approval"], self.root)
+        self.assertEqual(self.tv.disabled, set())
+        journal = json.loads(next(self.root.rglob("journal.json")).read_text())
+        self.assertEqual(journal["status"], "rolled_back")
 
     def test_wrong_device_restore_refused(self):
         p = self.planned("com.vendor.recommendations")
@@ -268,6 +342,12 @@ class Transactions(unittest.TestCase):
         self.tv.serial = ""
         with self.assertRaises(Refused):
             inventory(self.tv)
+
+    def test_empty_home_resolution_refused(self):
+        self.tv.home = ""
+        with self.assertRaisesRegex(Refused, "resolve the current Home"):
+            inventory(self.tv)
+        self.assertEqual(self.tv.writes, [])
 
     def test_hdmi4_mapping_not_row_number(self):
         x = input_summary(

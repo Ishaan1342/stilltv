@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Assets(unittest.TestCase):
+    def test_non_object_config_is_refused(self):
+        for config in (None, [], "config", 1):
+            with self.subTest(config=config), self.assertRaisesRegex(Refused, "JSON object"):
+                validate_config(config)
+
     def test_bundled_config_is_valid(self):
         validate_config(json.loads((ROOT / "android/assets/config.json").read_text()))
 
@@ -76,6 +81,33 @@ class Assets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(Refused):
                 prepare(Path(directory), Path(directory) / "output", 640, 360)
+
+    def test_landscape_fill_has_sharp_edges_and_separate_asset_names(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Install the photos extra")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "originals"
+            source.mkdir()
+            image = Image.new("RGB", (800, 450), "red")
+            image.paste("blue", (200, 0, 600, 450))
+            image.save(source / "coast.png")
+            filled = prepare(source, root / "fill", 640, 360, "fill")
+            contained = prepare(source, root / "contain", 640, 360)
+            self.assertNotEqual(filled["photos"][0]["file"], contained["photos"][0]["file"])
+            self.assertEqual(filled["method"], "fill-landscape-v2")
+            for key in ("file", "dream"):
+                with Image.open(root / "fill" / filled["photos"][0][key]) as frame:
+                    self.assertEqual(frame.size, (640, 360))
+                    self.assertGreater(frame.getpixel((10, 180))[0], 240)
+                    self.assertGreater(frame.getpixel((320, 10))[2], 240)
+
+    def test_unknown_photo_layout_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(Refused):
+                prepare(Path(directory), Path(directory) / "out", 640, 360, "stretch")
 
 
 if __name__ == "__main__":
