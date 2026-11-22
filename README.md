@@ -9,8 +9,8 @@ StillTV has two parts: a small native Android app and a Python tool for setting 
 The app works offline. The tool can install it, prepare photos, change the default Home app,
 and undo that change. Package cleanup is optional and separate.
 
-**Early version:** the app builds and the CLI has automated tests, but the launcher has not yet
-been tested on a physical TV. Don't use it as your only way back to a working Home screen.
+**Early version:** the launcher and screensaver have run on one Sony TV. Default Home replacement
+didn't work on that TV; the tool restored the previous settings. Keep a working launcher available.
 The [test record](docs/verification.md) says what has and hasn't been checked.
 
 ## What it does

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -140,7 +141,7 @@ def install(adb: Adb, apk: Path) -> dict:
     if not apk.is_file() or apk.suffix != ".apk":
         raise Refused("Supply a locally built APK.")
     output = adb.command(["install", "-r", str(apk.resolve())])
-    if output.strip() != "Success":
+    if not any(line.strip() == "Success" for line in output.splitlines()):
         raise Refused("Install was not acknowledged; original Home has not been changed.")
     return {
         "status": "installed",
@@ -215,10 +216,27 @@ def _activate(adb: Adb, root: Path, pause_projectivy: bool, inv: dict) -> dict:
         )
         if "Success" not in out:
             raise Refused("TV refused the Home preference.")
+        resolved = adb.shell(
+            "cmd",
+            "package",
+            "resolve-activity",
+            "--brief",
+            "-a",
+            "android.intent.action.MAIN",
+            "-c",
+            "android.intent.category.HOME",
+        ).splitlines()
+        if not resolved or not resolved[-1].startswith(APP + "/"):
+            raise Refused("TV acknowledged Home but still resolves to another launcher.")
         adb.shell("input", "keyevent", "KEYCODE_HOME")
-        state = adb.shell("dumpsys", "activity", "activities")
-        if not any("mResumedActivity" in line and APP + "/" in line for line in state.splitlines()):
-            raise Refused("Home did not reach StillTV.")
+        # HOME launches asynchronously; the key command returning is not a foreground check.
+        for attempt in range(21):
+            state = adb.shell("dumpsys", "activity", "activities")
+            if any("mResumedActivity" in line and APP + "/" in line for line in state.splitlines()):
+                break
+            if attempt == 20:
+                raise Refused("Home did not reach StillTV.")
+            time.sleep(0.5)
         before["status"] = "active"
         atomic_json(path, before)
     except (Exception, KeyboardInterrupt) as error:

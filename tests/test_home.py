@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from test_transactions import FakeTV
 
@@ -49,6 +50,9 @@ class HomeTV(FakeTV):
 
 class HomeTests(unittest.TestCase):
     def setUp(self):
+        sleep = patch("stilltv.launcher.time.sleep")
+        sleep.start()
+        self.addCleanup(sleep.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / "state"
         self.tv = HomeTV()
@@ -61,6 +65,35 @@ class HomeTests(unittest.TestCase):
         self.assertEqual(result["status"], "active")
         self.assertEqual(self.tv.services, READER)
         self.assertFalse(result["physical_remote_verified"])
+
+    def test_handover_waits_for_asynchronous_home_launch(self):
+        original = self.tv.shell
+        checks = []
+
+        def delayed(*args, **kwargs):
+            if args == ("dumpsys", "activity", "activities"):
+                checks.append(True)
+                if len(checks) < 3:
+                    return "mResumedActivity: com.previous.app/.Main"
+            return original(*args, **kwargs)
+
+        self.tv.shell = delayed
+        self.assertEqual(activate(self.tv, self.root, True)["status"], "active")
+        self.assertEqual(len(checks), 3)
+
+    def test_acknowledged_but_ignored_preference_rolls_back(self):
+        original = self.tv.shell
+
+        def ignored(*args, **kwargs):
+            if args[:3] == ("cmd", "package", "set-home-activity"):
+                return "Success"
+            return original(*args, **kwargs)
+
+        self.tv.shell = ignored
+        with self.assertRaisesRegex(Refused, "original Home settings were restored"):
+            activate(self.tv, self.root, True)
+        self.assertEqual(self.tv.home, "com.example.home/.Main")
+        self.assertIn(HELPER, self.tv.services)
 
     def test_restore_merges_new_services(self):
         result = activate(self.tv, self.root, True)

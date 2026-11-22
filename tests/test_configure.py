@@ -6,7 +6,7 @@ from pathlib import Path
 from test_transactions import FakeTV
 
 from stilltv.core import APP, Refused
-from stilltv.launcher import configure
+from stilltv.launcher import configure, install
 
 
 class UploadTV(FakeTV):
@@ -84,3 +84,16 @@ class Configuration(unittest.TestCase):
         with self.assertRaises(Refused):
             self.run_configure()
         self.assertEqual(self.tv.uploads, [])
+
+    def test_install_accepts_adb_progress_before_success(self):
+        apk = self.root / "stilltv.apk"
+        apk.write_bytes(b"synthetic APK")
+        self.tv.command = lambda args: "Performing Streamed Install\nSuccess"
+        self.assertEqual(install(self.tv, apk)["status"], "installed")
+
+    def test_install_requires_a_standalone_success_acknowledgement(self):
+        apk = self.root / "stilltv.apk"
+        apk.write_bytes(b"synthetic APK")
+        self.tv.command = lambda args: "Installation unsuccessful"
+        with self.assertRaisesRegex(Refused, "not acknowledged"):
+            install(self.tv, apk)
