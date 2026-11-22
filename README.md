@@ -11,8 +11,8 @@ StillTV has two parts: a small native Android app and a Python tool for setting 
 The app works offline. The tool can install it, prepare photos, change the default Home app,
 and undo that change. Package cleanup is optional and separate.
 
-**Early version:** the launcher and screensaver have run on one Sony TV. Default Home replacement
-didn't work on that TV; the tool restored the previous settings. Keep a working launcher available.
+**Early version:** tested on one Sony TV. It needed a device-specific Home handover; the CLI's
+normal activation wasn't enough. Keep a recovery route available.
 The [test record](docs/verification.md) says what has and hasn't been checked.
 
 ## What it does
@@ -21,7 +21,7 @@ The [test record](docs/verification.md) says what has and hasn't been checked.
 - Opens a list of installed TV apps and the HDMI inputs Android exposes.
 - Includes a photo screensaver with a clock that moves between corners.
 - Prepares 4K photos locally. Keep the whole image in a frame, or fill the screen with landscapes.
-- Saves the old Home setting before changing it. The stock launcher stays installed and enabled.
+- Saves the old Home setting before changing it. Normal CLI activation keeps the stock launcher enabled.
 - Can disable individually reviewed packages using a saved plan, with a journal for recovery.
   The included Sony profile disables nothing until you add reviewed candidates.
 

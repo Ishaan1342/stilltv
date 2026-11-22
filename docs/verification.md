@@ -45,9 +45,20 @@ supported. The following checks used ADB, not a person operating the remote:
   worked after selecting the service.
 - Tried Home replacement. Sony acknowledged the setting but continued resolving Home to Google TV.
   The handover refused and restored the saved Home/accessibility settings, including Projectivy.
-- Restarted the TV. StillTV and its photos remained installed and the app opened successfully.
-  The old Home/accessibility setup remained intact, but the selected screensaver reverted to the
-  previous Aerial Views service. Persistent screensaver activation is not verified.
+- During those first checks, a restart retained StillTV and its photos but lost the screensaver
+  selection, returning it to Aerial Views.
+- The owner then requested full activation. A separate, device-specific handover disabled Google TV's
+  `com.google.android.apps.tv.launcherx` and `com.google.android.tungsten.setupwraith` packages, preserving
+  their data. The saved Wi-Fi network's owner was checked first and was Android's system UID, not the
+  setup wizard. Projectivy's Home interception was paused. No input, settings or network packages were
+  disabled. This is not something the normal CLI activation does automatically.
+- Tested that separate rollback: both package states, the old Home preference, Projectivy accessibility
+  and Aerial Views selection were restored. Reactivated StillTV and restarted; Home still resolved to
+  StillTV. Netflix launched, Home returned to StillTV, and Android Settings remained accessible.
+- The earlier screensaver setting was lost during an immediate restart. After allowing the setting
+  to settle before a further restart, StillTV Photos remained selected and ran normally. Two post-boot
+  frames showed different photos and clock positions; an injected D-pad press exited the screensaver.
+  The old Projectivy launcher was subsequently disabled, with its data retained.
 - The TV's existing Android UI override is 1920×1080 despite its 4K panel. The photos are 4K files;
   these checks do not establish native 4K UI output. No display override was changed.
 
@@ -56,7 +67,8 @@ supported. The following checks used ADB, not a person operating the remote:
 - Launch apps and return using the physical remote.
 - Switch HDMI inputs and confirm the actual picture.
 - Start the screensaver, let it rotate, and exit using the remote.
-- Resolve Sony's default-Home restriction without silently disabling its stock launcher.
+- The normal CLI still refuses this Sony's default-Home restriction. The separate household handover
+  above does not establish a portable, automated solution for other TVs.
 - Verify the provider's permissions and recovery from interrupted uploads/config writes on Android.
 - Check memory use with 4K photos on the TV's actual UI surface.
 - Turn debugging off after setup and recovery checks are complete.

@@ -1,6 +1,6 @@
 include LICENSE README.md pyproject.toml
 recursive-include android *.java *.xml *.json
-recursive-include docs *.md *.svg
+recursive-include docs *.md *.svg *.png
 recursive-include profiles *.json
 recursive-include tools *.py
 recursive-include tests *.py *.java
