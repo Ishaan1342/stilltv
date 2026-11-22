@@ -3,7 +3,9 @@
 A simple home screen for Android TV: your photos, your apps, and an input picker.
 No recommendations feed or account to sign into.
 
-![Layout sketch, not a screenshot from a TV](docs/preview.svg)
+![StillTV running on a Sony TV, with a Big Sur coastline background and app shortcuts](docs/stilltv-screenshot.png)
+
+Running on a Sony BRAVIA. [Photo credit and screenshot license](docs/image-credits.md).
 
 StillTV has two parts: a small native Android app and a Python tool for setting it up over ADB.
 The app works offline. The tool can install it, prepare photos, change the default Home app,
