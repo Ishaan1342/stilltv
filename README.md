@@ -7,6 +7,15 @@ No recommendations feed or account to sign into.
 
 Running on a Sony BRAVIA. [Photo credit and screenshot license](docs/image-credits.md).
 
+<details>
+<summary>On the TV</summary>
+
+![StillTV on a Sony BRAVIA in a living room](docs/stilltv-on-tv.png)
+
+TV photo, edited for alignment and framing. [Image credits](docs/image-credits.md).
+
+</details>
+
 StillTV has two parts: a small native Android app and a Python tool for setting it up over ADB.
 The app works offline. The tool can install it, prepare photos, change the default Home app,
 and undo that change. Package cleanup is optional and separate.
